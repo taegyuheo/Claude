@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@@FILE@@ 분석</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+  :root { --code-bg:#0f172a; }
+  body { font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; }
+  .mono { font-family: "D2Coding", "Cascadia Code", Consolas, "Courier New", monospace; }
+
+  /* 코드 뷰어 */
+  #code { position:relative; background: var(--code-bg); color:#e2e8f0; font-size:13px; line-height:1.65; }
+  .line { display:flex; white-space:pre; border-left:3px solid transparent; width:max-content; min-width:100%; }
+  @media (min-width:768px) { main { grid-template-rows:minmax(0,1fr); } }
+  .line .ln { width:3.2rem; flex:none; text-align:right; padding-right:.9rem; color:#475569; user-select:none; }
+  .line .src { padding-right:1.5rem; }
+  .line[data-role="signal"]   { border-left-color:#a78bfa55; }
+  .line[data-role="init"]     { border-left-color:#60a5fa66; }
+  .line[data-role="loop"]     { border-left-color:#34d39966; }
+  .line[data-role="delay"]    { border-left-color:#fbbf2488; }
+  .line[data-role="shutdown"] { border-left-color:#fb923c66; }
+  .line[data-role="cleanup"]  { border-left-color:#fb718566; }
+  .line.flash { background:#facc1526; }
+  .line.focus { background:#38bdf81f; }
+
+  .t-com { color:#64748b; font-style:italic; }
+  .t-str { color:#fcd34d; }
+  .t-kw  { color:#c4b5fd; }
+  .t-pp  { color:#f9a8d4; }
+  .t-num { color:#fdba74; }
+  .t-hdr { color:#fcd34d; }
+
+  .sym { cursor:pointer; border-bottom:1px dotted currentColor; border-radius:2px; }
+  .sym:hover { background:#ffffff1a; }
+  .sym.k-func  { color:#7dd3fc; }
+  .sym.k-var   { color:#6ee7b7; }
+  .sym.k-macro { color:#fde047; }
+  .sym.k-const { color:#5eead4; }
+  .sym.k-type  { color:#67e8f9; }
+  .sym.k-op    { color:#fda4af; font-weight:700; padding:0 1px; }
+  .sym.k-kw    { color:#c4b5fd; }
+  .sym.active  { background:#38bdf84d; outline:1px solid #38bdf8; border-bottom-color:transparent; }
+  .sym.rel     { outline:1px dashed #fbbf24; border-bottom-color:transparent; }
+
+  /* 우측 패널 */
+  .doc h3 { font-weight:700; font-size:.95rem; margin:1.25rem 0 .5rem; color:#0f172a; }
+  .doc p, .doc li { line-height:1.7; }
+  .doc code { font-family:"D2Coding","Cascadia Code",Consolas,monospace; font-size:.85em; background:#f1f5f9; padding:.05rem .3rem; border-radius:.25rem; color:#0f172a; }
+  .doc pre { font-family:"D2Coding","Cascadia Code",Consolas,monospace; font-size:12.5px; background:#0f172a; color:#e2e8f0; padding:.8rem 1rem; border-radius:.5rem; overflow-x:auto; line-height:1.6; }
+  .doc pre code { background:none; color:inherit; padding:0; }
+  .doc table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  .doc th, .doc td { border-bottom:1px solid #e2e8f0; padding:.4rem .5rem; text-align:left; vertical-align:top; }
+  .doc th { background:#f8fafc; font-weight:600; color:#334155; }
+  .link { color:#0369a1; cursor:pointer; text-decoration:underline dotted; }
+  .link:hover { color:#0c4a6e; }
+
+  /* 레지스터 비트 그림 */
+  .bits { display:grid; grid-template-columns:repeat(32, minmax(1.15rem, 1fr)); gap:1px; min-width:38rem; }
+  .bit  { text-align:center; font-size:10px; padding:.15rem 0; background:#f1f5f9; color:#94a3b8; }
+  .bit.idx { background:transparent; color:#94a3b8; font-size:9px; }
+  .bit.hl  { background:#0ea5e9; color:#fff; font-weight:700; }
+  .bit.fld { background:#e2e8f0; color:#64748b; }
+
+  #led { transition: background .08s, box-shadow .08s; }
+  #led.on { background:#ef4444; box-shadow:0 0 18px 6px #ef444499; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<header class="h-14 px-4 flex items-center gap-3 bg-white border-b border-slate-200">
+  <div class="font-bold text-slate-900 mono">@@FILE@@</div>
+  <div id="subtitle" class="text-sm text-slate-500 hidden sm:block"></div>
+  <div class="ml-auto flex items-center gap-2">
+    <div id="legend" class="hidden lg:flex items-center gap-3 text-xs text-slate-500 mr-2"></div>
+    <button id="btnOverview" class="text-sm px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-700">전체 개요</button>
+  </div>
+</header>
+
+<main class="grid md:grid-cols-2 md:h-[calc(100vh-3.5rem)]">
+  <!-- 좌측: 코드 뷰어 -->
+  <section class="flex flex-col min-h-0 border-r border-slate-800">
+    <div class="px-4 py-2 text-xs bg-slate-800 text-slate-300 flex items-center gap-2">
+      <span class="mono">@@PATH@@</span>
+      <span class="ml-auto text-slate-400">밑줄 친 이름을 클릭하세요</span>
+    </div>
+    <div id="code" class="mono flex-1 overflow-auto py-3 max-h-[60vh] md:max-h-none"></div>
+  </section>
+
+  <!-- 우측: 분석 패널 -->
+  <section id="panel" class="doc overflow-auto bg-white px-5 sm:px-7 py-6 min-h-0"></section>
+</main>
+
+<script type="text/plain" id="src">
+@@SOURCE@@
+</script>
+
+<script>
+/* ============================================================
+ * 1. 역할 구간 (줄 번호 → 역할)
+ * ============================================================ */
+const ROLES = {
+  signal:   { label:'신호 준비',      color:'bg-violet-400', text:'text-violet-700', soft:'bg-violet-50' },
+  init:     { label:'초기화',         color:'bg-blue-400',   text:'text-blue-700',   soft:'bg-blue-50' },
+  loop:     { label:'메인 루프',      color:'bg-emerald-400',text:'text-emerald-700',soft:'bg-emerald-50' },
+  delay:    { label:'지연',           color:'bg-amber-400',  text:'text-amber-700',  soft:'bg-amber-50' },
+  shutdown: { label:'종료',           color:'bg-orange-400', text:'text-orange-700', soft:'bg-orange-50' },
+  cleanup:  { label:'정리',           color:'bg-rose-400',   text:'text-rose-700',   soft:'bg-rose-50' },
+  global:   { label:'전역 정의',      color:'bg-slate-400',  text:'text-slate-700',  soft:'bg-slate-50' },
+};
+const hex = (v, w=8) => '0x' + (v >>> 0).toString(16).toUpperCase().padStart(w, '0');
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* ============================================================
+ * 2. 파일별 데이터 — tools/data/<이름>.js 가 여기에 들어간다 (build.sh)
+ *    META, OVERVIEW, SECTIONS, REGS, SYM, ALIAS 를 정의해야 한다
+ * ============================================================ */
+@@DATA@@
+
+/* ============================================================
+ * 3. 엔진 (모든 파일 공통 — 수정하면 모든 결과물을 다시 빌드)
+ * ============================================================ */
+function roleOfLine(n) { const s = SECTIONS.find(s => n >= s.from && n <= s.to); return s ? s.role : ''; }
+
+function regDiagram(name) {
+  const r = REGS[name];
+  let idx = '', cells = '';
+  for (let b = 31; b >= 0; b--) {
+    idx += `<div class="bit idx">${b}</div>`;
+    let cls = 'bit', ch = r.zero ? '0' : '·';
+    if (b >= r.hl.lo && b <= r.hl.hi) { cls += ' hl'; ch = r.hl.bits[r.hl.hi - b]; }
+    else if (r.fields && r.fields.some(f => b >= f.lo && b <= f.hi && f.label !== '예약' && (Math.floor(b/3)%2))) cls += ' fld';
+    cells += `<div class="${cls}">${ch}</div>`;
+  }
+  return `
+  <div class="border border-slate-200 rounded-lg p-3 my-3">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+      <span class="mono font-bold text-sky-700 link" data-go="REG_${name}">${name}</span>
+      <span class="text-xs text-slate-500">${r.title}</span>
+      <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 mono">${r.access}</span>
+    </div>
+    <div class="grid grid-cols-3 gap-2 text-xs mono mb-2">
+      <div><div class="text-slate-400">오프셋</div>+${hex(r.off,2)}</div>
+      <div><div class="text-slate-400">물리 주소</div>${hex(GPIO_PHYS + r.off)}</div>
+      <div><div class="text-slate-400">버스 주소</div>${hex(GPIO_BUS + r.off)}</div>
+    </div>
+    <div class="overflow-x-auto"><div class="bits mono">${idx}${cells}</div></div>
+    <div class="text-xs mt-2 text-sky-700 font-semibold">${r.hl.label}</div>
+  </div>`;
+}
+
+const OPS = { '!':'op_not', '?':'op_ternary', '&':'op_addr' };
+
+const KIND = {
+  func:{ label:'함수', cls:'bg-sky-100 text-sky-800' }, var:{ label:'변수', cls:'bg-emerald-100 text-emerald-800' },
+  macro:{ label:'매크로', cls:'bg-yellow-100 text-yellow-800' }, const:{ label:'상수', cls:'bg-teal-100 text-teal-800' },
+  type:{ label:'타입', cls:'bg-cyan-100 text-cyan-800' }, op:{ label:'연산자', cls:'bg-rose-100 text-rose-800' },
+  kw:{ label:'키워드', cls:'bg-violet-100 text-violet-800' }, reg:{ label:'레지스터', cls:'bg-slate-800 text-white' },
+};
+
+/* ============================================================
+ * 4. 구문 강조 + 클릭 가능한 심볼
+ * ============================================================ */
+const KW = new Set('int unsigned static volatile void struct return while goto if else for const char long sizeof'.split(' '));
+const SRC = document.getElementById('src').textContent.replace(/\r\n/g, '\n').replace(/^\n/, '').replace(/\s+$/, '');
+const OCC = {};   // 심볼 → 등장 줄 번호
+
+function renderCode() {
+  const re = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*)|("(?:\\.|[^"\\\n])*")|(<[\w.\/]+\.h>)|(#\s*\w+)|(\b(?:0x[0-9a-fA-F]+|\d+)[uUlL]*\b)|([A-Za-z_]\w*)|(\n)|([\s\S])/g;
+  const lines = [[]];
+  let m, ln = 1;
+  const push = (html) => lines[lines.length - 1].push(html);
+  const mark = (key, text, kind) => {
+    (OCC[key] ||= new Set()).add(ln);
+    return `<span class="sym k-${kind}" data-sym="${key}">${esc(text)}</span>`;
+  };
+  /* 주석은 파일 머리 주석(첫 #include 위)만 보여 준다.
+   * 나머지 주석은 지우고, 주석만 있던 줄은 숨긴다 → 줄 번호는 원본 그대로 유지 */
+  const headerEnd = SRC.indexOf('#include');
+  const hidden = new Set();                      // 숨길 줄 번호
+  while ((m = re.exec(SRC))) {
+    const [t, com, str, hdr, pp, num, id, nl] = m;
+    if (nl) { lines.push([]); ln++; continue; }
+    if (com) {
+      const keep = m.index < headerEnd;
+      com.split('\n').forEach((part, i) => {
+        if (i) { lines.push([]); ln++; }
+        if (keep) push(`<span class="t-com">${esc(part)}</span>`);
+        else if (lines[ln - 1].join('').trim() === '') hidden.add(ln);   // 주석 앞에 코드가 없으면 주석 전용 줄
+      });
+    }
+    else if (str) push(`<span class="t-str">${esc(str)}</span>`);
+    else if (hdr) push(`<span class="t-hdr">${esc(hdr)}</span>`);
+    else if (pp)  push(`<span class="t-pp">${esc(pp)}</span>`);
+    else if (num) push(`<span class="t-num">${num}</span>`);
+    else if (id) {
+      const key = ALIAS[id] || (SYM[id] ? id : null);
+      if (key) push(mark(key, id, KW.has(id) ? 'kw' : (id === 'sa' || id === 'sa_handler') ? 'var' : (ALIAS[id] && SYM[key].kind === 'var' ? 'type' : SYM[key].kind)));
+      else push(KW.has(id) ? `<span class="t-kw">${id}</span>` : esc(id));
+    }
+    else if (OPS[t] && SYM[OPS[t]] && SRC[re.lastIndex] !== '=' && SRC[re.lastIndex] !== t) push(mark(OPS[t], t, 'op'));
+    else push(esc(t));
+  }
+  document.getElementById('code').innerHTML = lines.map((parts, i) => {
+    const n = i + 1;
+    if (hidden.has(n)) return '';
+    const src = parts.join('').replace(/\s+$/, '');                    // 줄 끝 주석을 지운 뒤 남은 공백 제거
+    return `<div class="line" id="L${n}" data-role="${roleOfLine(n)}"><span class="ln">${n}</span><span class="src">${src || ' '}</span></div>`;
+  }).join('');
+}
+
+/* ============================================================
+ * 5. 우측 패널
+ * ============================================================ */
+const panel = document.getElementById('panel');
+let simTimer = null;
+
+function roleBadge(role) {
+  const r = ROLES[role]; if (!r) return '';
+  return `<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${r.soft} ${r.text}"><span class="w-1.5 h-1.5 rounded-full ${r.color}"></span>${r.label}</span>`;
+}
+
+/* 함수 카드 본문: 파라미터 → 리턴값 → 동작 → 실패 원인 → 관련 변수/함수 */
+function funcBody(s) {
+  const table = (head, rows, nowrapFirst = true) => `<div class="overflow-x-auto"><table>
+      <tr>${head.map(h => `<th>${h}</th>`).join('')}</tr>
+      ${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i === 0 && nowrapFirst ? 'whitespace-nowrap' : ''}">${c}</td>`).join('')}</tr>`).join('')}</table></div>`;
+  const relList = items => items.length ? `<div class="divide-y divide-slate-100 border border-slate-200 rounded-lg">${items.map(([k, why]) => `
+      <div class="flex items-center gap-3 px-3 py-2 text-sm">
+        ${SYM[k] ? `<button class="mono text-xs px-2 py-1 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 flex-none" data-go="${k}">${SYM[k].title || k}</button>`
+                 : `<span class="mono text-xs px-2 py-1 rounded border border-slate-200 bg-slate-50 flex-none">${k}</span>`}
+        <span class="text-slate-600">${why}</span></div>`).join('')}</div>` : '<p class="text-sm text-slate-500">없음</p>';
+  return `
+    <h3>📥 파라미터</h3>
+    ${s.params.length ? table(['이름', '타입', '이 코드에서 넘긴 값', '설명'], s.params.map(([n, t, v, d]) => [`<code>${n}</code>`, `<span class="mono text-xs">${esc(t)}</span>`, v, d]))
+                      : '<p class="text-sm text-slate-500">파라미터 없음</p>'}
+    ${s.paramNote ? `<p class="text-sm mt-2">${s.paramNote}</p>` : ''}
+    <h3>📤 리턴값</h3>
+    ${table(['값', '의미', '이 코드에서의 처리'], s.ret)}
+    ${s.retNote ? `<p class="text-sm mt-2">${s.retNote}</p>` : ''}
+    <h3>⚙ 동작</h3>${s.how}
+    <h3>⚠ 실패 원인 분석</h3>
+    ${table(['원인', '증상 / errno', '이 코드에서 일어나는 일', '대처'], s.fails, false)}
+    ${s.failNote ? `<p class="text-sm mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">${s.failNote}</p>` : ''}
+    <h3>🔗 관련 변수 · 상수</h3>${relList(s.vars)}
+    <h3>🔗 관련 함수</h3>${relList(s.funcs)}`;
+}
+
+function showSymbol(key, fromCode = false) {
+  const s = SYM[key]; if (!s) return;
+  stopSim();
+  document.querySelectorAll('.sym.active, .sym.rel').forEach(e => e.classList.remove('active', 'rel'));
+  document.querySelectorAll(`.sym[data-sym="${key}"]`).forEach(e => e.classList.add('active'));
+  if (s.kind === 'func')    /* 관련 변수·함수를 코드에서도 표시 */
+    [...s.vars, ...s.funcs].forEach(([k]) => document.querySelectorAll(`.sym[data-sym="${k}"]`).forEach(e => e.classList.add('rel')));
+
+  const k = KIND[s.kind];
+  const lines = OCC[key] ? [...OCC[key]].sort((a,b)=>a-b) : [];
+  panel.innerHTML = `
+    <button class="text-sm link mb-4" data-overview>← 전체 개요</button>
+    <div class="flex flex-wrap items-center gap-2 mb-2">
+      <span class="text-xs px-2 py-0.5 rounded ${k.cls}">${k.label}</span>${roleBadge(s.role)}
+    </div>
+    <h2 class="text-2xl font-bold mono text-slate-900 break-all">${s.title || key}</h2>
+    <div class="mono text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded px-3 py-2 mt-2 overflow-x-auto whitespace-pre">${esc(s.sig)}</div>
+    <p class="mt-3 text-[15px]">${s.summary}</p>
+    ${lines.length ? `<div class="mt-3 text-sm text-slate-500">등장 줄: ${lines.map(n => `<span class="link mono mr-1.5" data-line="${n}">L${n}</span>`).join('')}</div>` : ''}
+    ${s.kind === 'func' ? funcBody(s) : ''}
+    ${(s.sections || []).map(([h, body]) => (h ? `<h3>${h}</h3>` : '<div class="mt-4"></div>') + body).join('')}
+    ${s.regs ? `<h3>📍 관련 레지스터 (BCM2711)</h3>${s.regs.map(regDiagram).join('')}` : ''}
+    ${s.extra || ''}
+    ${s.related && s.related.length ? `<h3>관련 심볼</h3><div class="flex flex-wrap gap-1.5">${s.related.filter(r => SYM[r]).map(r =>
+        `<button class="mono text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-100" data-go="${r}">${SYM[r].title || r}</button>`).join('')}</div>` : ''}
+    <div class="h-10"></div>`;
+  panel.scrollTop = 0;
+  if (lines.length && !fromCode) scrollToLine(lines[0], true);
+}
+
+function showOverview() {
+  stopSim();
+  document.querySelectorAll('.sym.active, .sym.rel').forEach(e => e.classList.remove('active', 'rel'));
+  panel.innerHTML = `
+    <div class="text-xs font-semibold tracking-wider text-sky-700 mb-1">전체 개요</div>
+    <h2 class="text-2xl font-bold text-slate-900">${OVERVIEW.heading}</h2>
+    <p class="mt-3 text-[15px]">${OVERVIEW.summary}</p>
+    ${OVERVIEW.sim ? `
+    <div class="mt-5 rounded-xl border border-slate-200 p-4 flex items-center gap-5">
+      <div id="led" class="w-10 h-10 rounded-full bg-slate-300 border-4 border-slate-200 flex-none"></div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold">${OVERVIEW.sim.title}</div>
+        <div id="simInfo" class="mono text-xs text-slate-500 mt-1 truncate">${OVERVIEW.sim.intro}</div>
+      </div>
+      <button id="btnSim" class="text-sm px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-500 flex-none">▶ 재생</button>
+    </div>` : ''}
+
+    <h3>🧭 실행 흐름 (역할별)</h3>
+    <div class="space-y-1">${SECTIONS.filter(s => s.title).map(s => `
+      <div class="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50 cursor-pointer" data-line="${s.from}" data-to="${s.to}">
+        <span class="w-2.5 h-2.5 rounded-full ${ROLES[s.role].color} flex-none"></span>
+        <span class="mono text-xs text-slate-400 w-14 flex-none">L${s.from}${s.to!==s.from?'–'+s.to:''}</span>
+        <span class="text-sm"><b>${s.title}</b> <span class="text-slate-500">${s.desc}</span></span>
+      </div>`).join('')}</div>
+
+    <h3>👀 보는 법</h3>
+    <ul class="list-disc pl-5 text-sm text-slate-600">
+      <li>왼쪽 코드에서 <b>밑줄 친 이름</b>을 클릭하면 여기에 상세 카드가 나온다.
+        <span class="mono text-sky-600">함수</span> · <span class="mono text-emerald-600">변수</span> · <span class="mono text-yellow-600">매크로</span> · <span class="mono text-teal-600">상수</span> · <span class="mono text-rose-500">연산자(! ? &amp;)</span></li>
+      <li>코드 왼쪽 세로 색 띠 = 그 줄의 역할 (초기화 / 메인 루프 / 지연 / 종료 / 정리)</li>
+      <li><kbd class="mono text-xs border rounded px-1">Esc</kbd> 또는 상단 <b>전체 개요</b> 버튼 → 이 화면으로</li>
+    </ul>
+    <div class="h-10"></div>`;
+  panel.scrollTop = 0;
+  if (OVERVIEW.sim) document.getElementById('btnSim').onclick = toggleSim;
+}
+
+/* 루프 시뮬레이션: OVERVIEW.sim 의 from~to 줄을 ms 마다 강조하고 on/off 문구를 번갈아 보여 준다 */
+function toggleSim() { simTimer ? stopSim() : startSim(); }
+function startSim() {
+  const sim = OVERVIEW.sim;
+  let on = 0;
+  const btn = document.getElementById('btnSim'), led = document.getElementById('led'), info = document.getElementById('simInfo');
+  btn.textContent = '■ 정지'; btn.classList.replace('bg-emerald-600', 'bg-rose-600');
+  const tick = () => {
+    on = !on;
+    led.classList.toggle('on', on);
+    info.innerHTML = on ? sim.on : sim.off;
+    flashLines(sim.from, sim.to, sim.ms * 0.9);
+  };
+  tick(); simTimer = setInterval(tick, sim.ms);
+}
+function stopSim() {
+  if (!simTimer) return;
+  clearInterval(simTimer); simTimer = null;
+  const btn = document.getElementById('btnSim'), led = document.getElementById('led'), info = document.getElementById('simInfo');
+  if (btn) { btn.textContent = '▶ 재생'; btn.classList.replace('bg-rose-600', 'bg-emerald-600'); }
+  if (led) led.classList.remove('on');
+  if (info) info.innerHTML = OVERVIEW.sim.stop;
+}
+
+/* ============================================================
+ * 6. 줄 이동 / 강조
+ * ============================================================ */
+function scrollToLine(n, flash = true, to = n) {
+  let el = null;                                 // 숨겨진(주석 전용) 줄이면 아래쪽 가장 가까운 줄로
+  for (let i = n; !el && i <= Math.max(to, n) + 5; i++) el = document.getElementById('L' + i);
+  if (!el) return;
+  const box = document.getElementById('code');
+  box.scrollTo({ top: el.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
+  if (flash) flashLines(n, to, 1200);
+}
+function flashLines(from, to, ms) {
+  for (let i = from; i <= to; i++) {
+    const el = document.getElementById('L' + i); if (!el) continue;
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), ms);
+  }
+}
+
+/* ============================================================
+ * 7. 이벤트
+ * ============================================================ */
+document.addEventListener('click', e => {
+  const sym = e.target.closest('.sym');
+  if (sym) { showSymbol(sym.dataset.sym, true); return; }
+  const go = e.target.closest('[data-go]');
+  if (go) { showSymbol(go.dataset.go); return; }
+  const line = e.target.closest('[data-line]');
+  if (line) { scrollToLine(+line.dataset.line, true, +(line.dataset.to || line.dataset.line)); return; }
+  if (e.target.closest('[data-overview]')) showOverview();
+});
+document.getElementById('btnOverview').onclick = showOverview;
+document.addEventListener('keydown', e => { if (e.key === 'Escape') showOverview(); });
+
+document.getElementById('legend').innerHTML = ['init','loop','delay','shutdown','cleanup']
+  .map(r => `<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full ${ROLES[r].color}"></span>${ROLES[r].label}</span>`).join('');
+
+document.getElementById('subtitle').textContent = META.subtitle;
+renderCode();
+const start = decodeURIComponent(location.hash.slice(1));
+SYM[start] ? showSymbol(start) : showOverview();
+</script>
+</body>
+</html>
